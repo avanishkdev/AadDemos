@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Authentication;
@@ -10,17 +8,23 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Clients.ActiveDirectory;
-using Newtonsoft.Json;
 using WebApp.Filter;
-
-// For more information on enabling MVC for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
-
 namespace WebApp.Controllers
 {
     [Authorize]
     [ForceReauthentication(50)]
     public class FetchValuesController : Controller
     {
+        private static readonly HttpClient ApiClient = CreateApiClient();
+
+        private static HttpClient CreateApiClient()
+        {
+            var handler = new HttpClientHandler();
+            handler.ServerCertificateCustomValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true;
+            handler.SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls11 | SslProtocols.Tls;
+            return new HttpClient(handler);
+        }
+
         // GET: /<controller>/
         public async Task<IActionResult> Index()
         {
@@ -33,17 +37,17 @@ namespace WebApp.Controllers
                 result = await authContext.AcquireTokenSilentAsync(AzureAdOptions.Settings.ResourceId, credential, new UserIdentifier(userObjectID, UserIdentifierType.UniqueId));
 
                 // Retrieve data from API.
-                var handler = new HttpClientHandler();
-                handler.ServerCertificateCustomValidationCallback = (sender, certificate, chain, sslPolicyErrors) => true;
-                handler.SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls11 | SslProtocols.Tls;
-                HttpClient client = new HttpClient(handler);
-                HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, AzureAdOptions.Settings.APIBaseAddress + "/api/values");
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
-                HttpResponseMessage response = await client.SendAsync(request);
-
-                if (response.IsSuccessStatusCode)
+                using (var request = new HttpRequestMessage(HttpMethod.Get, AzureAdOptions.Settings.APIBaseAddress + "/api/values"))
                 {
-                    ViewBag.Response = await response.Content.ReadAsStringAsync();
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+
+                    using (var response = await ApiClient.SendAsync(request))
+                    {
+                        if (response.IsSuccessStatusCode)
+                        {
+                            ViewBag.Response = await response.Content.ReadAsStringAsync();
+                        }
+                    }
                 }
             }
             catch (Exception ex)
